@@ -35,6 +35,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::SystemTime;
+use tempfile::tempdir;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWrite};
 use tokio::{fs, io};
@@ -416,7 +417,24 @@ impl Server {
     async fn handle_upload(&self, path: &Path, mut req: Request, res: &mut Response) -> Result<()> {
         ensure_path_parent(path).await?;
 
-        let mut file = match fs::File::create(&path).await {
+        let is_folder_readonly = match fs::metadata(path.parent().unwrap()).await {
+            Ok(v) => v.permissions().readonly(),
+            Err(_) => {
+                status_forbid(res);
+                return Ok(());
+            }
+        };
+
+        if is_folder_readonly {
+            status_forbid(res);
+            return Ok(());
+        }
+
+        // Cannot use tempfile as it is not compatible with tokio::io::copy
+        let tmp_dir = tempdir()?;
+        let tmp_file_path = tmp_dir.path().join(path.file_name().unwrap());
+
+        let mut tmp_file = match fs::File::create(&tmp_file_path).await {
             Ok(v) => v,
             Err(_) => {
                 status_forbid(res);
@@ -432,10 +450,23 @@ impl Server {
 
         futures::pin_mut!(body_reader);
 
-        io::copy(&mut body_reader, &mut file).await?;
+        match io::copy(&mut body_reader, &mut tmp_file).await {
+            Ok(_) => {
+                fs::rename(tmp_file_path, path).await?;
+                drop(tmp_file);
+                tmp_dir.close()?;
 
-        *res.status_mut() = StatusCode::CREATED;
-        Ok(())
+                status_created(res);
+                return Ok(());
+            }
+            Err(_) => {
+                drop(tmp_file);
+                tmp_dir.close()?;
+
+                status_no_content(res);
+                return Ok(());
+            }
+        };
     }
 
     async fn handle_delete(&self, path: &Path, is_dir: bool, res: &mut Response) -> Result<()> {
@@ -857,7 +888,7 @@ impl Server {
 
     async fn handle_mkcol(&self, path: &Path, res: &mut Response) -> Result<()> {
         fs::create_dir_all(path).await?;
-        *res.status_mut() = StatusCode::CREATED;
+        status_created(res);
         Ok(())
     }
 
@@ -1511,6 +1542,10 @@ fn status_not_found(res: &mut Response) {
 
 fn status_no_content(res: &mut Response) {
     *res.status_mut() = StatusCode::NO_CONTENT;
+}
+
+fn status_created(res: &mut Response) {
+    *res.status_mut() = StatusCode::CREATED;
 }
 
 fn set_content_diposition(res: &mut Response, inline: bool, filename: &str) -> Result<()> {
