@@ -6,7 +6,8 @@ on:
     - '*'
   push:
     branches:
-    - main
+    - main-fork
+  workflow_dispatch:
 
 defaults:
   run:
