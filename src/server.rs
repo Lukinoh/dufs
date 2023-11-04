@@ -3,8 +3,8 @@
 use crate::auth::{www_authenticate, AccessPaths, AccessPerm};
 use crate::http_utils::{body_full, IncomingStream, LengthLimitedStream};
 use crate::utils::{
-    decode_uri, encode_uri, get_file_mtime_and_mode, get_file_name, glob, parse_range,
-    try_get_file_name,
+    append_ext, decode_uri, encode_uri, get_file_mtime_and_mode, get_file_name, glob,
+    parse_range, try_get_file_name,
 };
 use crate::Args;
 
@@ -61,7 +61,7 @@ const FAVICON_ICO: &[u8] = include_bytes!("../assets/favicon.ico");
 const INDEX_NAME: &str = "index.html";
 const BUF_SIZE: usize = 65536;
 const EDITABLE_TEXT_MAX_SIZE: u64 = 4194304; // 4M
-const RESUMABLE_UPLOAD_MIN_SIZE: u64 = 20971520; // 20M
+// const RESUMABLE_UPLOAD_MIN_SIZE: u64 = 20971520; // 20M
 const HEALTH_CHECK_PATH: &str = "__dufs__/health";
 
 pub struct Server {
@@ -492,16 +492,19 @@ impl Server {
         res: &mut Response,
     ) -> Result<()> {
         ensure_path_parent(path).await?;
-        let (mut file, status) = match upload_offset {
-            None => (fs::File::create(path).await?, StatusCode::CREATED),
+
+        let temp_path = append_ext("dufsupload", path.to_path_buf());
+
+        let (mut temp_file, status) = match upload_offset {
+            None => (fs::File::create(&temp_path).await?, StatusCode::CREATED),
             Some(offset) if offset == size => (
-                fs::OpenOptions::new().append(true).open(path).await?,
+                fs::OpenOptions::new().append(true).open(&temp_path).await?,
                 StatusCode::NO_CONTENT,
             ),
             Some(offset) => {
-                let mut file = fs::OpenOptions::new().write(true).open(path).await?;
-                file.seek(SeekFrom::Start(offset)).await?;
-                (file, StatusCode::NO_CONTENT)
+                let mut temp_file = fs::OpenOptions::new().write(true).open(&temp_path).await?;
+                temp_file.seek(SeekFrom::Start(offset)).await?;
+                (temp_file, StatusCode::NO_CONTENT)
             }
         };
         let stream = IncomingStream::new(req.into_body());
@@ -511,17 +514,23 @@ impl Server {
 
         pin_mut!(body_reader);
 
-        let ret = io::copy(&mut body_reader, &mut file).await;
-        let size = fs::metadata(path)
-            .await
-            .map(|v| v.len())
-            .unwrap_or_default();
+        let ret = io::copy(&mut body_reader, &mut temp_file).await;
+        // let size = fs::metadata(&temp_path)
+            // .await
+            // .map(|v| v.len())
+            // .unwrap_or_default();
         if ret.is_err() {
-            if upload_offset.is_none() && size < RESUMABLE_UPLOAD_MIN_SIZE {
-                let _ = tokio::fs::remove_file(&path).await;
-            }
+            // Disable if, otherwise automatic removal is not done
+            // if upload_offset.is_none() && size < RESUMABLE_UPLOAD_MIN_SIZE {
+                let _ = tokio::fs::remove_file(&temp_path).await;
+            // }
             ret?;
         }
+
+        
+        // It may not be compatible with resumable upload
+        // I was not able to test
+        fs::rename(temp_path, path).await?;
 
         *res.status_mut() = status;
 

@@ -4,7 +4,8 @@ use chrono::{DateTime, Utc};
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use std::{
     borrow::Cow,
-    path::Path,
+    ffi::{OsStr, OsString},
+    path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -130,6 +131,26 @@ pub fn parse_range(range: &str, size: u64) -> Option<(u64, u64)> {
             None
         }
     }
+}
+
+/// Source: https://internals.rust-lang.org/t/pathbuf-has-set-extension-but-no-add-extension-cannot-cleanly-turn-tar-to-tar-gz/14187/11
+/// Returns a path with a new dotted extension component appended to the end.
+/// Note: does not check if the path is a file or directory; you should do that.
+/// # Example
+/// ```
+/// use pathext::append_ext;
+/// use std::path::PathBuf;
+/// let path = PathBuf::from("foo/bar/baz.txt");
+/// if !path.is_dir() {
+///    assert_eq!(append_ext("app", path), PathBuf::from("foo/bar/baz.txt.app"));
+/// }
+/// ```
+///
+pub fn append_ext(ext: impl AsRef<OsStr>, path: PathBuf) -> PathBuf {
+    let mut os_string: OsString = path.into();
+    os_string.push(".");
+    os_string.push(ext.as_ref());
+    os_string.into()
 }
 
 #[cfg(test)]
