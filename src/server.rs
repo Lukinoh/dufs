@@ -3,7 +3,8 @@
 use crate::auth::{www_authenticate, AccessPaths, AccessPerm};
 use crate::streamer::Streamer;
 use crate::utils::{
-    decode_uri, encode_uri, get_file_mtime_and_mode, get_file_name, glob, try_get_file_name,
+    append_ext, decode_uri, encode_uri, get_file_mtime_and_mode, get_file_name, glob,
+    try_get_file_name,
 };
 use crate::Args;
 use anyhow::{anyhow, Result};
@@ -411,7 +412,9 @@ impl Server {
     async fn handle_upload(&self, path: &Path, mut req: Request, res: &mut Response) -> Result<()> {
         ensure_path_parent(path).await?;
 
-        let mut file = match fs::File::create(&path).await {
+        let temp_path = append_ext("dufsupload", path.to_path_buf());
+
+        let mut temp_file = match fs::File::create(&temp_path).await {
             Ok(v) => v,
             Err(_) => {
                 status_forbid(res);
@@ -427,12 +430,14 @@ impl Server {
 
         futures::pin_mut!(body_reader);
 
-        let ret = io::copy(&mut body_reader, &mut file).await;
+        let ret = io::copy(&mut body_reader, &mut temp_file).await;
         if ret.is_err() {
-            tokio::fs::remove_file(&path).await?;
+            tokio::fs::remove_file(&temp_path).await?;
 
             ret?;
         }
+
+        fs::rename(temp_path, path).await?;
 
         *res.status_mut() = StatusCode::CREATED;
         Ok(())
