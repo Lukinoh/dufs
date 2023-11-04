@@ -11,4 +11,5 @@ FROM ${TARGETARCH} AS builder
 FROM scratch
 COPY --from=builder /bin/dufs /bin/dufs
 STOPSIGNAL SIGINT
+EXPOSE 5000
 ENTRYPOINT ["/bin/dufs"]
