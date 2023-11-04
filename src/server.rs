@@ -319,7 +319,7 @@ impl Server {
                 set_webdav_headers(&mut res);
             }
             Method::PUT => {
-                if !allow_upload || (!allow_delete && is_file && size > 0) {
+                if !allow_upload || (!allow_delete && is_file && size > 0) || is_dir {
                     status_forbid(&mut res);
                 } else {
                     self.handle_upload(path, req, &mut res).await?;
