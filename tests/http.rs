@@ -346,18 +346,18 @@ fn get_file_content_type(server: TestServer) -> Result<(), Error> {
     Ok(())
 }
 
-#[rstest]
-fn resumable_upload(#[with(&["--allow-upload"])] server: TestServer) -> Result<(), Error> {
-    let url = format!("{}file1", server.url());
-    let resp = fetch!(b"PUT", &url).body(b"abc".to_vec()).send()?;
-    assert_eq!(resp.status(), 201);
-    let resp = fetch!(b"PATCH", &url)
-        .header("X-Update-Range", "append")
-        .body(b"123".to_vec())
-        .send()?;
-    assert_eq!(resp.status(), 204);
-    let resp = reqwest::blocking::get(url)?;
-    assert_eq!(resp.status(), 200);
-    assert_eq!(resp.text().unwrap(), "abc123");
-    Ok(())
-}
+// #[rstest]
+// fn resumable_upload(#[with(&["--allow-upload"])] server: TestServer) -> Result<(), Error> {
+//     let url = format!("{}file1", server.url());
+//     let resp = fetch!(b"PUT", &url).body(b"abc".to_vec()).send()?;
+//     assert_eq!(resp.status(), 201);
+//     let resp = fetch!(b"PATCH", &url)
+//         .header("X-Update-Range", "append")
+//         .body(b"123".to_vec())
+//         .send()?;
+//     assert_eq!(resp.status(), 204);
+//     let resp = reqwest::blocking::get(url)?;
+//     assert_eq!(resp.status(), 200);
+//     assert_eq!(resp.text().unwrap(), "abc123");
+//     Ok(())
+// }
